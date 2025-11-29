@@ -29,6 +29,7 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
 
     if mission_state == 4
         global_waypoints = [zeros(N_pts, 1), zeros(N_pts, 1)];
+        % trajSet = {}; % 빈 return 방지용
         return;
     end
 
@@ -59,6 +60,9 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
                 [s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, s_jerk, d_jerk] = sampleTrajectory(coeff_s, coeff_d, T, N_pts);
     
                 [x_traj_tmp, y_traj_tmp] = frenetToGlobal(s_traj, d_traj, centerLine);
+
+                % assignin('base','logData',[s_traj, d_traj]);
+                
                 kappa = computeCurvature(x_traj_tmp, y_traj_tmp);
     
                 if ~checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, kappa, otherVehicles, centerLine, mission_state, tollgate_num, T, N_pts)
@@ -73,6 +77,7 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
             end
         end
     end
+    assignin('base','trajSet',trajSet);
 
     if isempty(costs)
         x_traj = zeros(N_pts, 1);
@@ -91,7 +96,6 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
 
     global_waypoints = [x_traj, y_traj];
     driving_mission_info_out.velReference = V_ref;
-
 end
 
 function coeff = quinticPoly(xi, vi, ai, xf, vf, af, T)
@@ -293,6 +297,9 @@ function valid = checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, 
     % 차량 직사각형 크기 (공통)
     car_length = 4.5;    % [m]
     car_width  = 2.0;    % [m]
+    
+    obsVehicle_predPath = {};
+    egoVehicle_collidingPath = {};
 
     for i = 1:size(otherVehicles,1)
         obs_X_init = otherVehicles(i,1);
@@ -332,6 +339,9 @@ function valid = checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, 
         obs_yaw   = pred(5,:);
         Nt = min(N_pts, size(pred,2));
 
+        obsVehicle_predPath{end + 1} = [Xpred, Ypred]; % obs number i's predicted path appending
+        assignin('base','obsVehicle_predPath',obsVehicle_predPath);
+        
         for j = 1:Nt
             Ce   = [x_traj(j);   y_traj(j)];   % ego center
             Co   = [Xpred(j);    Ypred(j)];    % obs center
@@ -343,6 +353,8 @@ function valid = checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, 
 
             if isCollide
                 valid = false;
+                egoVehicle_collidingPath{end + 1} = [x_traj, y_traj]; % colliding predicted ego's candidate path
+                assignin('base','egoVehicle_collidingPath',egoVehicle_collidingPath);
                 return;
             end
         end
@@ -354,7 +366,7 @@ function valid = checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, 
             return;
         end
     end
-
+    
     valid = true;
 end
 
