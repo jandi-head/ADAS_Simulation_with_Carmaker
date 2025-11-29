@@ -13,6 +13,10 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
     x = ego_status.ego_X;
     y = ego_status.ego_Y;
     yaw = ego_status.ego_YAW;
+
+    ego_global_position = [x, y, yaw];
+    assignin('base','ego_global_position',ego_global_position);
+
     centerLine = MapData_Info.Route2;
 
     laneWidth = 3.5;
@@ -47,6 +51,8 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
     costs = [];
     VList = [];
 
+    optimal_trajSet = {};
+
     for i = 1:length(dList)
         df = dList(i);
         for j = 1:length(TimeList)
@@ -64,14 +70,16 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
                 % assignin('base','logData',[s_traj, d_traj]);
                 
                 kappa = computeCurvature(x_traj_tmp, y_traj_tmp);
-    
-                if ~checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, kappa, otherVehicles, centerLine, mission_state, tollgate_num, T, N_pts)
-                    continue;
-                end
 
                 if ~checkCollide(s_traj, d_traj, otherVehicles, centerLine, T, N_pts)
                     continue;
                 end
+
+                if ~checkConstraints(s_traj, d_traj, s_dot, d_dot, s_ddot, d_ddot, kappa, otherVehicles, centerLine, mission_state, tollgate_num, T, N_pts)
+                    continue;
+                end
+
+
     
                 cost = computeCost(s_jerk, d_jerk, T, di, s_dot(end), df, targetSpeed);
     
@@ -86,6 +94,10 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
     if isempty(costs)
         x_traj = zeros(N_pts, 1);
         y_traj = zeros(N_pts, 1);
+
+        optimal_trajSet = {};
+        assignin('base','optimal_trajSet', optimal_trajSet); % 빈 optimal path workspace로 빼내기
+
         V_ref = single(5/3.6);
         driving_mission_info_out.is_Optimal_Path = uint8(0);
         % disp("no optimal path")
@@ -93,6 +105,10 @@ function [global_waypoints, driving_mission_info_out]  = optimal_trajectory_plan
         [~, index] = min(costs);
         x_traj = trajSet{index}(:,1);
         y_traj = trajSet{index}(:,2);
+        
+        optimal_trajSet = [x_traj, y_traj];
+        assignin('base','optimal_trajSet', optimal_trajSet); % optimal path workspace로 빼내기
+
         V_ref = single(VList(index));
         driving_mission_info_out.is_Optimal_Path = uint8(1);
         % disp("optimal path find")
@@ -306,7 +322,10 @@ function valid = checkCollide(s_traj, d_traj, otherVehicles, centerLine, T, N_pt
     car_width  = 2.0;    % [m]
     
     obsVehicle_predPath = {};
+    obsVehicle_position = {};
     egoVehicle_collidingPath = {};
+    assignin('base','egoVehicle_collidingPath', egoVehicle_collidingPath);
+
 
     for i = 1:size(otherVehicles,1)
         obs_X_init = otherVehicles(i,1);
@@ -346,8 +365,11 @@ function valid = checkCollide(s_traj, d_traj, otherVehicles, centerLine, T, N_pt
         obs_yaw   = pred(5,:);
         Nt = min(N_pts, size(pred,2));
 
-        obsVehicle_predPath{end + 1} = [Xpred, Ypred]; % obs number i's predicted path appending
-        assignin('base','obsVehicle_predPath',obsVehicle_predPath);
+        obs_i_predPath = [Xpred', Ypred'];
+        obs_i_position = [obs_X_init, obs_Y_init, obs_yaw_init];
+
+        obsVehicle_position{end+1} = obs_i_position;
+        obsVehicle_predPath{end + 1} = obs_i_predPath; % obs number i's predicted path appending
         
         for j = 1:Nt
             Ce   = [x_traj(j);   y_traj(j)];   % ego center
@@ -362,12 +384,18 @@ function valid = checkCollide(s_traj, d_traj, otherVehicles, centerLine, T, N_pt
                 valid = false;
                 egoVehicle_collidingPath{end + 1} = [x_traj, y_traj]; % colliding predicted ego's candidate path
                 assignin('base','egoVehicle_collidingPath',egoVehicle_collidingPath);
+                assignin('base','obsVehicle_predPath',obsVehicle_predPath);
+                assignin('base','obsVehicle_position',obsVehicle_position);
+                assignin('base','T',T);
                 return;
             end
         end
 
 
     end
+    assignin('base','obsVehicle_predPath',obsVehicle_predPath);
+    assignin('base','obsVehicle_position',obsVehicle_position);
+    assignin('base','T',T);
     valid = true;
 end
 
